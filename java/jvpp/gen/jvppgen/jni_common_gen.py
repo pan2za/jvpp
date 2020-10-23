@@ -71,6 +71,12 @@ def _generate_j2c_object_array_swap(field, struct_ref_name):
     host = "%sArrayElement" % field_reference_name
     net = "%s->%s[_i]" % (struct_ref_name, c_name)
     swap_elements = field_type.get_host_to_net_function(host, net)
+    if c_name == "sw_if_index":
+            # TODO: acl sw_if_index dump
+            return _J2C_OBJECT_SINGLE_SWAP_TEMPLATE.substitute(
+                field_reference_name=field_reference_name,
+                field_length_check=_generate_field_length_check(field),
+                swap_elements=swap_elements)
     return _J2C_OBJECT_ARRAY_SWAP_TEMPLATE.substitute(
         field_reference_name=field_reference_name,
         field_length_check=_generate_field_length_check(field),
@@ -91,12 +97,34 @@ _J2C_OBJECT_ARRAY_SWAP_TEMPLATE = Template("""
 """)
 
 
+_J2C_OBJECT_SINGLE_SWAP_TEMPLATE = Template("""
+    {
+        if (${field_reference_name}) {
+            size_t _i;
+            jsize cnt = (*env)->GetArrayLength (env, ${field_reference_name});
+            ${field_length_check}
+            jobject ${field_reference_name}ArrayElement = (*env)->GetObjectArrayElement(env, ${field_reference_name}, _i);
+            _host_to_net_interface_index(env, swIfIndexArrayElement, &(mp->sw_if_index));
+        }
+    }
+""")
+
+
 def _generate_j2c_primitive_type_array_swap(field, struct_ref_name):
     field_reference_name = field.java_name
     field_type = field.type
     host = "%sArrayElements[_i]" % field_reference_name
     net = "%s->%s[_i]" % (struct_ref_name,  field.name)
     swap_elements = field_type.get_host_to_net_function(host, net)
+    if field.name == "acl_index":
+            return _J2C_PRIMITIVE_TYPE_SINGLE_SWAP_TEMPLATE.substitute(
+                field_reference_name=field_reference_name,
+                field_length_check=_generate_field_length_check(field),
+                base_type=field_type.base_type.jni_accessor,
+                jni_base_type=field_type.base_type.jni_type,
+                swap_elements=swap_elements
+            )
+
     return _J2C_PRIMITIVE_TYPE_ARRAY_SWAP_TEMPLATE.substitute(
         field_reference_name=field_reference_name,
         field_length_check=_generate_field_length_check(field),
@@ -117,6 +145,19 @@ _J2C_PRIMITIVE_TYPE_ARRAY_SWAP_TEMPLATE = Template("""
         (*env)->Release${base_type}ArrayElements (env, ${field_reference_name}, ${field_reference_name}ArrayElements, 0);
     }
     """)
+
+
+_J2C_PRIMITIVE_TYPE_SINGLE_SWAP_TEMPLATE = Template("""
+    if (${field_reference_name}) {
+        ${jni_base_type} * ${field_reference_name}ArrayElements = (*env)->Get${base_type}ArrayElements(env, ${field_reference_name}, NULL);
+        size_t _i;
+        jsize cnt = (*env)->GetArrayLength(env, ${field_reference_name});
+        ${field_length_check}
+        mp->acl_index = clib_host_to_net_u32(aclIndexArrayElements[_i]);
+        (*env)->Release${base_type}ArrayElements (env, ${field_reference_name}, ${field_reference_name}ArrayElements, 0);
+    }
+    """)
+
 
 
 def _generate_j2c_primitive_type_array_no_swap(field, struct_ref_name, is_alias):
@@ -160,7 +201,7 @@ def _generate_field_length_check(field):
         field_length = field.array_len_field.java_name
 
     # TODO: remove when ZLAs without length field are disabled
-    if field_length != "0":
+    if field_length != "0" and field_length[0] != "{":
         return _FIELD_LENGTH_CHECK.substitute(field_length=field_length)
     else:
         return ""
@@ -174,6 +215,8 @@ _FIELD_LENGTH_CHECK = Template("""
 
 def _generate_j2c_scalar_swap(field, struct_ref_name, is_alias):
     field_type = field.type
+    if field.name == "timestamp" or field.name == "timedelta":
+        return "    *%s = %s;" % (struct_ref_name, field.java_name)
     if field_type.is_swap_needed:
         host = field.java_name
         if not is_alias:
@@ -185,7 +228,7 @@ def _generate_j2c_scalar_swap(field, struct_ref_name, is_alias):
                 return "    %s;" % field_type.get_host_to_net_function(host, net)
         else:
             net = "%s" % struct_ref_name
-            return "    *%s;" % field_type.get_host_to_net_function(host, net)
+            return "    %s;" % field_type.get_host_to_net_function(host, net)
     else:
         return "    %s->%s = %s;" % (struct_ref_name, field.name, field.java_name)
 
@@ -323,6 +366,29 @@ def _generate_c2j_primitive_type_array_no_swap(msg_java_name, field, object_ref_
         template = _C2J_PRIMITIVE_TYPE_ARRAY_NO_SWAP_TEMPLATE
     else:
         template = _C2J_ALIAS_PRIMITIVE_TYPE_ARRAY_NO_SWAP_TEMPLATE
+
+    field_length=_generate_array_length(field, struct_ref_name)
+    str_len = str(field_length)
+    if len(str_len) > 2 and str_len[0] == "{" and "default" in str_len:
+        if not is_alias:
+            template = _C2J_DEFAULT_PRIMITIVE_TYPE_ARRAY_NO_SWAP_TEMPLATE
+        else:
+            template = _C2J_ALIAS_DEFAULT_PRIMITIVE_TYPE_ARRAY_NO_SWAP_TEMPLATE
+
+        return template.substitute(
+            field_reference_name=field.java_name,
+            class_ref_name=msg_java_name,
+            jni_signature=field_type.jni_signature,
+            jni_type=field_type.jni_type,
+            base_type=field_type.base_type.jni_accessor,
+            field_length=_generate_array_length(field, struct_ref_name),
+            jni_base_type=field_type.base_type.jni_type,
+            object_ref_name=object_ref_name,
+            struct_ref_name=struct_ref_name,
+            c_name=field.name
+        )
+
+
     return template.substitute(
         field_reference_name=field.java_name,
         class_ref_name=msg_java_name,
@@ -353,6 +419,24 @@ _C2J_ALIAS_PRIMITIVE_TYPE_ARRAY_NO_SWAP_TEMPLATE = Template("""
     (*env)->DeleteLocalRef(env, ${field_reference_name});
 """)
 
+_C2J_DEFAULT_PRIMITIVE_TYPE_ARRAY_NO_SWAP_TEMPLATE = Template("""
+    jfieldID ${field_reference_name}FieldId = (*env)->GetFieldID(env, ${class_ref_name}Class, "${field_reference_name}", "${jni_signature}");
+    ${jni_type} ${field_reference_name} = (*env)->New${base_type}Array(env, 2);
+    (*env)->Set${base_type}ArrayRegion(env, ${field_reference_name}, 0, 2, (const ${jni_base_type}*)${struct_ref_name}->${c_name});
+    (*env)->SetObjectField(env, ${object_ref_name}, ${field_reference_name}FieldId, ${field_reference_name});
+    (*env)->DeleteLocalRef(env, ${field_reference_name});
+""")
+
+_C2J_ALIAS_PRIMITIVE_TYPE_DEFAULT_ARRAY_NO_SWAP_TEMPLATE = Template("""
+    jfieldID ${field_reference_name}FieldId = (*env)->GetFieldID(env, ${class_ref_name}Class, "${field_reference_name}", "${jni_signature}");
+    ${jni_type} ${field_reference_name} = (*env)->New${base_type}Array(env, 2);
+    (*env)->Set${base_type}ArrayRegion(env, ${field_reference_name}, 0, 2, (const ${jni_base_type}*)${struct_ref_name});
+    (*env)->SetObjectField(env, ${object_ref_name}, ${field_reference_name}FieldId, ${field_reference_name});
+    (*env)->DeleteLocalRef(env, ${field_reference_name});
+""")
+
+
+
 
 def _generate_array_length(field, struct_ref_name):
     if field.array_len_field:
@@ -380,6 +464,7 @@ def _generate_c2j_scalar_swap(msg_java_name, field, object_ref_name, struct_ref_
 
 def _generate_c2j_object_swap(msg_java_name, field, object_ref_name, struct_ref_name):
     field_type = field.type
+
     if "Union" in field_type.jni_name:
         return _C2J_UNION_SWAP_TEMPLATE.substitute(
             java_name=field.java_name,
@@ -408,7 +493,7 @@ _C2J_OBJECT_SWAP_TEMPLATE = Template("""
     jclass ${java_name}Class = (*env)->FindClass(env, "${jni_name}");
     jmethodID ${java_name}Constructor = (*env)->GetMethodID(env, ${java_name}Class, "<init>", "()V");
     jobject ${java_name} = (*env)->NewObject(env, ${java_name}Class,  ${java_name}Constructor);
-    ${net_to_host_function}(env, &(${struct_ref_name}->${c_name}), ${java_name});
+    ${net_to_host_function}(env, &(${struct_ref_name}), ${java_name});
     (*env)->Set${jni_accessor}Field(env, ${object_ref_name}, ${java_name}FieldId, ${java_name});
     (*env)->DeleteLocalRef(env, ${java_name});
 """)
@@ -419,6 +504,16 @@ _C2J_UNION_SWAP_TEMPLATE = Template("""
     jmethodID ${java_name}Constructor = (*env)->GetMethodID(env, ${java_name}UnionClass, "<init>", "()V");
     jobject ${java_name} = (*env)->NewObject(env, ${java_name}UnionClass,  ${java_name}Constructor);
     ${net_to_host_function}(env, &(${struct_ref_name}->${c_name}), ${java_name});
+    (*env)->Set${jni_accessor}Field(env, ${object_ref_name}, ${java_name}FieldId, ${java_name});
+    (*env)->DeleteLocalRef(env, ${java_name});
+""")
+
+_C2J_OBJECT_NO_SWAP_TEMPLATE = Template("""
+    jfieldID ${java_name}FieldId = (*env)->GetFieldID(env, ${class_ref_name}Class, "${java_name}", "${jni_signature}");
+    jclass ${java_name}Class = (*env)->FindClass(env, "${jni_name}");
+    jmethodID ${java_name}Constructor = (*env)->GetMethodID(env, ${java_name}Class, "<init>", "()V");
+    jobject ${java_name} = (*env)->NewObject(env, ${java_name}Class,  ${java_name}Constructor);
+    ${net_to_host_function}(env, &(${struct_ref_name}), ${java_name});
     (*env)->Set${jni_accessor}Field(env, ${object_ref_name}, ${java_name}FieldId, ${java_name});
     (*env)->DeleteLocalRef(env, ${java_name});
 """)

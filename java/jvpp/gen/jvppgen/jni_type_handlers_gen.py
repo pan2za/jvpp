@@ -46,6 +46,9 @@ def _generate_class(model, t, type_handlers):
     ref_name = t.java_name_lower
     is_alias = t.name in model._aliases
 
+    if t.name == "ip6_address_with_prefix" :
+        is_alias = True 
+
     type_handlers.append(_TYPE_HOST_TO_NET_TEMPLATE.substitute(
         c_name=t.name,
         json_filename=model.json_api_files,
@@ -55,6 +58,8 @@ def _generate_class(model, t, type_handlers):
         jni_identifiers=generate_j2c_identifiers(t, class_ref_name="%sClass" % ref_name, object_ref_name="_host"),
         type_swap=generate_j2c_swap(t, struct_ref_name="_net", is_alias=is_alias)
     ))
+
+
     type_handlers.append(_TYPE_NET_TO_HOST_TEMPLATE.substitute(
         c_name=t.name,
         json_filename=model.json_api_files,
@@ -136,7 +141,7 @@ $json_definition
  */
 static inline ${jni_type} _net_to_host_${c_name}(vl_api_${c_name}_t _net)
 {
-    return (${jni_type}) $type_swap
+    return (${jni_type}) $type_swap;
 }""")
 
 

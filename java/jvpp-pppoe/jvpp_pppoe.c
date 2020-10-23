@@ -15,9 +15,8 @@
 
 #include <vnet/vnet.h>
 
-#include <pppoe/pppoe_msg_enum.h>
 #define vl_typedefs             /* define message structures */
-#include <pppoe/pppoe_all_api_h.h>
+#include <pppoe/pppoe.api.h>
 #undef vl_typedefs
 
 #include <vnet/api_errno.h>

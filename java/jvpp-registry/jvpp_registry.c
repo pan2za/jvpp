@@ -119,7 +119,7 @@ static void vl_api_control_ping_reply_t_handler(
                 NULL) != 0) {
             clib_warning("Failed to attach thread\n");
             rm->control_ping_retval =
-                    VNET_API_ERROR_FAILED_TO_ATTACH_TO_JAVA_THREAD;
+                    VNET_API_ERROR_UNSPECIFIED;
             goto out;
         }
 
@@ -179,7 +179,7 @@ static int find_ping_id() {
     int rv = 0;
     jvpp_main_t * jm = &jvpp_main;
     jvpp_registry_main_t * rm = &jvpp_registry_main;
-    api_main_t *am = &api_main;
+    api_main_t *am = vlibapi_get_main();
     hash_pair_t *hp;
     jm->messages_hash = am->msg_index_by_name_and_crc;
 
@@ -251,7 +251,7 @@ void * __jvpp_heap;
 
 static int connect_to_vpe(char *shm_prefix, char *name) {
     jvpp_main_t * jm = &jvpp_main;
-    api_main_t * am = &api_main;
+    api_main_t * am = vlibapi_get_main();
     jvpp_registry_main_t * rm = &jvpp_registry_main;
 
 #if USE_DLMALLOC == 1

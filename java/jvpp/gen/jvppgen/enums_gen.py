@@ -75,4 +75,4 @@ $constants;
 def _generate_constants(constants):
     return ",\n".join(_CONSTANT_TEMPLATE.substitute(name=c['name'], value=c['value']) for c in constants)
 
-_CONSTANT_TEMPLATE = Template("""    $name($value)""")
+_CONSTANT_TEMPLATE = Template("""    $name((byte)$value)""")

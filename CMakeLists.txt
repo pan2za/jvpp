@@ -98,7 +98,7 @@ info("Java version" ${Java_VERSION_STRING})
 info("Java headers" ${Java_INCLUDE_DIRS})
 info("Javac" ${Java_JAVAC_EXECUTABLE})
 
-execute_process(COMMAND ./scripts/verify-installed vpp-* OUTPUT_VARIABLE VPP_INSTALLED)
+execute_process(COMMAND ${CMAKE_SOURCE_DIR}/scripts/verify-installed vpp-* OUTPUT_VARIABLE VPP_INSTALLED)
 #string(STRIP "${VPP_INSTALLED}" VPP_INSTALLED)
 
 if ("${VPP_INSTALLED}" MATCHES "vpp-dev")
